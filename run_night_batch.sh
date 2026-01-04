@@ -33,13 +33,50 @@ is_time_allowed() {
     fi
 }
 
-# Check if we're in the allowed time window
+# Function to calculate minutes until start time
+minutes_until_start() {
+    current_hour=$(date +%H)
+    current_minute=$(date +%M)
+    current_time=$((10#$current_hour * 60 + 10#$current_minute))
+    
+    start_time=30  # 12:30 AM
+    
+    if [ $current_time -lt $start_time ]; then
+        # Same day - just wait until 12:30 AM
+        echo $((start_time - current_time))
+    else
+        # After 4:30 AM - wait until 12:30 AM next day
+        minutes_until_midnight=$((1440 - current_time))
+        echo $((minutes_until_midnight + start_time))
+    fi
+}
+
+# Wait until we're in the allowed time window
 if ! is_time_allowed; then
-    log_message "Not in allowed time window (12:30 AM - 4:30 AM). Exiting."
-    exit 0
+    wait_minutes=$(minutes_until_start)
+    wait_hours=$((wait_minutes / 60))
+    wait_mins=$((wait_minutes % 60))
+    
+    log_message "Not in allowed time window yet."
+    log_message "Waiting ${wait_hours}h ${wait_mins}m until 12:30 AM to start..."
+    log_message "You can safely leave this running in screen/tmux."
+    
+    # Wait in 5-minute intervals, checking if we've reached start time
+    while ! is_time_allowed; do
+        sleep 300  # Sleep for 5 minutes
+        
+        # Log progress every hour
+        current_minute=$(date +%M)
+        if [ "$current_minute" = "00" ] || [ "$current_minute" = "30" ]; then
+            remaining=$(minutes_until_start)
+            remaining_hours=$((remaining / 60))
+            remaining_mins=$((remaining % 60))
+            log_message "Still waiting... ${remaining_hours}h ${remaining_mins}m until 12:30 AM"
+        fi
+    done
 fi
 
-log_message "Starting WikiMapper batch run..."
+log_message "Time window reached! Starting WikiMapper batch run..."
 
 # Create virtual environment if it doesn't exist
 if [ ! -d "$VENV_DIR" ]; then
