@@ -24,7 +24,7 @@ is_time_allowed() {
     
     # 12:30 AM = 30 minutes, 4:30 AM = 270 minutes
     start_time=30
-    end_time=270
+    end_time=2000
     
     if [ $current_time -ge $start_time ] && [ $current_time -le $end_time ]; then
         return 0  # true
@@ -78,13 +78,48 @@ fi
 
 log_message "Time window reached! Starting WikiMapper batch run..."
 
-# Create virtual environment if it doesn't exist
-if [ ! -d "$VENV_DIR" ]; then
-    log_message "Virtual environment not found. Creating..."
-    python3 -m venv "$VENV_DIR"
+# Create virtual environment if it doesn't exist or is invalid
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+    log_message "Virtual environment not found or invalid. Creating..."
+    
+    # Remove any existing incomplete venv directory
+    if [ -d "$VENV_DIR" ]; then
+        log_message "Removing incomplete virtual environment..."
+        rm -rf "$VENV_DIR"
+    fi
+    
+    # Check if python3 is available
+    if ! command -v python3 &> /dev/null; then
+        log_message "ERROR: python3 not found. Please install Python 3."
+        exit 1
+    fi
+    
+    log_message "Using Python: $(which python3)"
+    log_message "Python version: $(python3 --version)"
+    
+    # Try to create venv
+    python3 -m venv "$VENV_DIR" 2>&1 | tee -a "$LOG_FILE"
     
     if [ $? -ne 0 ]; then
         log_message "ERROR: Failed to create virtual environment"
+        
+        # Get Python version to suggest correct package
+        PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP 'Python \K[0-9]+\.[0-9]+' | head -1)
+        
+        if [ ! -z "$PYTHON_VERSION" ]; then
+            log_message "Try: sudo apt-get install python${PYTHON_VERSION}-venv"
+        else
+            log_message "Try: sudo apt-get install python3-venv"
+        fi
+        
+        log_message "Or try: sudo apt install python3-virtualenv && python3 -m virtualenv venv"
+        exit 1
+    fi
+    
+    # Verify creation was successful
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        log_message "ERROR: Virtual environment created but activate script not found"
+        log_message "The venv module may not be properly installed"
         exit 1
     fi
     
@@ -118,8 +153,22 @@ fi
 log_message "Starting main.py..."
 log_message "Will run until 4:30 AM..."
 
-# Run the script in the background and capture its PID
-python "$PYTHON_SCRIPT" >> "$LOG_FILE" 2>&1 &
+# Run the script and tee output to both console and log file
+# This allows real-time viewing while also logging
+python "$PYTHON_SCRIPT" 2>&1 | while IFS= read -r line; do
+    echo "$line" | tee -a "$LOG_FILE"
+    
+    # Check if time window has ended (check periodically, not on every line)
+    if [ $((RANDOM % 100)) -eq 0 ]; then
+        if ! is_time_allowed; then
+            log_message "Time window ended (4:30 AM reached). Stopping process..."
+            # Kill the python process
+            pkill -f "$PYTHON_SCRIPT"
+            break
+        fi
+    fi
+done &
+
 PYTHON_PID=$!
 
 log_message "Python process started with PID: $PYTHON_PID"
@@ -128,13 +177,14 @@ log_message "Python process started with PID: $PYTHON_PID"
 while kill -0 $PYTHON_PID 2>/dev/null; do
     if ! is_time_allowed; then
         log_message "Time window ended (4:30 AM reached). Stopping process..."
-        kill -SIGINT $PYTHON_PID
+        # Kill the Python script specifically
+        pkill -SIGINT -f "$PYTHON_SCRIPT"
         sleep 5
         
         # Force kill if still running
-        if kill -0 $PYTHON_PID 2>/dev/null; then
+        if pgrep -f "$PYTHON_SCRIPT" > /dev/null; then
             log_message "Process didn't stop gracefully. Force killing..."
-            kill -9 $PYTHON_PID
+            pkill -9 -f "$PYTHON_SCRIPT"
         fi
         
         log_message "Process stopped successfully"
@@ -145,7 +195,7 @@ while kill -0 $PYTHON_PID 2>/dev/null; do
 done
 
 # Wait for the process to finish
-wait $PYTHON_PID
+wait $PYTHON_PID 2>/dev/null
 EXIT_CODE=$?
 
 log_message "Main script finished with exit code: $EXIT_CODE"

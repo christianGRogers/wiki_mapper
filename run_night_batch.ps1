@@ -75,34 +75,58 @@ if ($LASTEXITCODE -ne 0) {
 Log-Message "Starting main.py..."
 Log-Message "Will run until 4:30 AM..."
 
-# Start the Python process
-$pythonProcess = Start-Process -FilePath "python" -ArgumentList $PythonScript -NoNewWindow -PassThru -RedirectStandardOutput "output.log" -RedirectStandardError "error.log"
+# Start the Python process as a job to capture output while monitoring
+$job = Start-Job -ScriptBlock {
+    param($scriptPath, $venvPath)
+    
+    # Activate venv in job
+    & "$venvPath\Scripts\Activate.ps1"
+    
+    # Run Python and capture output
+    & python $scriptPath 2>&1
+} -ArgumentList $PythonScript, $VenvDir
 
-Log-Message "Python process started with PID: $($pythonProcess.Id)"
+Log-Message "Python process started with Job ID: $($job.Id)"
 
-# Monitor the process and stop it at 4:30 AM
-while (-not $pythonProcess.HasExited) {
+# Monitor the job and display output in real-time
+while ($job.State -eq 'Running') {
+    # Check if time window has ended
     if (-not (Is-TimeAllowed)) {
         Log-Message "Time window ended (4:30 AM reached). Stopping process..."
-        
-        # Send Ctrl+C equivalent (graceful shutdown)
-        try {
-            $pythonProcess.Kill()
-            Log-Message "Process stopped successfully"
-        }
-        catch {
-            Log-Message "Error stopping process: $_"
-        }
-        
+        Stop-Job -Job $job
+        Remove-Job -Job $job -Force
+        Log-Message "Process stopped successfully"
         break
     }
     
-    Start-Sleep -Seconds 60  # Check every minute
+    # Get any new output from the job and display it
+    $output = Receive-Job -Job $job
+    if ($output) {
+        foreach ($line in $output) {
+            Write-Host $line
+            Add-Content -Path $LogFile -Value $line
+        }
+    }
+    
+    Start-Sleep -Seconds 1  # Check every second for output
 }
 
-# Wait for the process to finish
-$pythonProcess.WaitForExit()
-$exitCode = $pythonProcess.ExitCode
+# Get any remaining output
+$output = Receive-Job -Job $job
+if ($output) {
+    foreach ($line in $output) {
+        Write-Host $line
+        Add-Content -Path $LogFile -Value $line
+    }
+}
+
+# Get exit code
+$exitCode = 0
+if ($job.State -eq 'Failed') {
+    $exitCode = 1
+}
+
+Remove-Job -Job $job -Force
 
 Log-Message "Main script finished with exit code: $exitCode"
 
@@ -110,15 +134,5 @@ Log-Message "Main script finished with exit code: $exitCode"
 deactivate
 
 Log-Message "Batch run complete"
-
-# Append Python output to main log
-if (Test-Path "output.log") {
-    Get-Content "output.log" | Add-Content -Path $LogFile
-    Remove-Item "output.log"
-}
-if (Test-Path "error.log") {
-    Get-Content "error.log" | Add-Content -Path $LogFile
-    Remove-Item "error.log"
-}
 
 exit $exitCode
