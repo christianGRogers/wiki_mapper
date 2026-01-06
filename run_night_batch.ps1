@@ -1,5 +1,12 @@
 # WikiMapper Night Batch Runner (PowerShell)
 # Runs between 12:30 AM and 4:30 AM
+# Supports both single-machine and multi-machine modes
+
+param(
+    [int]$MachineId = -1,
+    [int]$TotalMachines = -1,
+    [switch]$MultiMachine
+)
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
@@ -8,6 +15,17 @@ $VenvDir = "venv"
 $RequirementsFile = "requirements.txt"
 $PythonScript = "main.py"
 $LogFile = "batch_run.log"
+
+# If both machine ID and total machines are set, use multi-machine script
+if ($MachineId -ge 0 -and $TotalMachines -gt 0) {
+    $PythonScript = "main_multi_machine.py"
+    $LogFile = "batch_run_machine_$MachineId.log"
+    $MultiMachine = $true
+} elseif ($MultiMachine) {
+    Write-Host "ERROR: Multi-machine mode requires --MachineId and --TotalMachines parameters"
+    Write-Host "Usage: .\run_night_batch.ps1 -MachineId 0 -TotalMachines 3"
+    exit 1
+}
 
 # Function to log messages
 function Log-Message {
@@ -34,6 +52,14 @@ if (-not (Is-TimeAllowed)) {
 }
 
 Log-Message "Starting WikiMapper batch run..."
+
+# Log multi-machine configuration if applicable
+if ($MultiMachine) {
+    Log-Message "Multi-machine mode enabled:"
+    Log-Message "  Machine ID: $MachineId"
+    Log-Message "  Total machines: $TotalMachines"
+    Log-Message "  Script: $PythonScript"
+}
 
 # Create virtual environment if it doesn't exist
 if (-not (Test-Path $VenvDir)) {
@@ -72,19 +98,33 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # Run the main script with time limit
-Log-Message "Starting main.py..."
+Log-Message "Starting $PythonScript..."
 Log-Message "Will run until 4:30 AM..."
+
+# Build command arguments for multi-machine mode if applicable
+$pythonArgs = @()
+if ($MultiMachine) {
+    $pythonArgs += "--machine-id", $MachineId
+    $pythonArgs += "--total-machines", $TotalMachines
+    Log-Message "Running command: python $PythonScript --machine-id $MachineId --total-machines $TotalMachines"
+} else {
+    Log-Message "Running command: python $PythonScript"
+}
 
 # Start the Python process as a job to capture output while monitoring
 $job = Start-Job -ScriptBlock {
-    param($scriptPath, $venvPath)
+    param($scriptPath, $venvPath, $args)
     
     # Activate venv in job
     & "$venvPath\Scripts\Activate.ps1"
     
     # Run Python and capture output
-    & python $scriptPath 2>&1
-} -ArgumentList $PythonScript, $VenvDir
+    if ($args.Count -gt 0) {
+        & python $scriptPath $args 2>&1
+    } else {
+        & python $scriptPath 2>&1
+    }
+} -ArgumentList $PythonScript, $VenvDir, $pythonArgs
 
 Log-Message "Python process started with Job ID: $($job.Id)"
 

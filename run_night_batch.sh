@@ -2,6 +2,7 @@
 
 # WikiMapper Night Batch Runner
 # Runs between 12:30 AM and 4:30 AM
+# Supports both single-machine and multi-machine modes
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -10,6 +11,42 @@ VENV_DIR="venv"
 REQUIREMENTS_FILE="requirements.txt"
 PYTHON_SCRIPT="main.py"
 LOG_FILE="batch_run.log"
+
+# Multi-machine support (optional)
+# Set these environment variables or pass as arguments:
+# MACHINE_ID - ID of this machine (0-indexed)
+# TOTAL_MACHINES - Total number of machines in cluster
+MACHINE_ID="${MACHINE_ID:-}"
+TOTAL_MACHINES="${TOTAL_MACHINES:-}"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --machine-id)
+            MACHINE_ID="$2"
+            shift 2
+            ;;
+        --total-machines)
+            TOTAL_MACHINES="$2"
+            shift 2
+            ;;
+        --multi-machine)
+            PYTHON_SCRIPT="main_multi_machine.py"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--machine-id N] [--total-machines N] [--multi-machine]"
+            exit 1
+            ;;
+    esac
+done
+
+# If both machine ID and total machines are set, use multi-machine script
+if [ ! -z "$MACHINE_ID" ] && [ ! -z "$TOTAL_MACHINES" ]; then
+    PYTHON_SCRIPT="main_multi_machine.py"
+    LOG_FILE="batch_run_machine_${MACHINE_ID}.log"
+fi
 
 # Function to log messages
 log_message() {
@@ -77,6 +114,14 @@ if ! is_time_allowed; then
 fi
 
 log_message "Time window reached! Starting WikiMapper batch run..."
+
+# Log multi-machine configuration if applicable
+if [ ! -z "$MACHINE_ID" ] && [ ! -z "$TOTAL_MACHINES" ]; then
+    log_message "Multi-machine mode enabled:"
+    log_message "  Machine ID: $MACHINE_ID"
+    log_message "  Total machines: $TOTAL_MACHINES"
+    log_message "  Script: $PYTHON_SCRIPT"
+fi
 
 # Create virtual environment if it doesn't exist or is invalid
 if [ ! -f "$VENV_DIR/bin/activate" ]; then
@@ -150,12 +195,20 @@ if [ $? -ne 0 ]; then
 fi
 
 # Run the main script with time limit
-log_message "Starting main.py..."
+log_message "Starting $PYTHON_SCRIPT..."
 log_message "Will run until 4:30 AM..."
+
+# Build command with multi-machine arguments if applicable
+CMD="python $PYTHON_SCRIPT"
+if [ ! -z "$MACHINE_ID" ] && [ ! -z "$TOTAL_MACHINES" ]; then
+    CMD="$CMD --machine-id $MACHINE_ID --total-machines $TOTAL_MACHINES"
+fi
+
+log_message "Running command: $CMD"
 
 # Run the script and tee output to both console and log file
 # This allows real-time viewing while also logging
-python "$PYTHON_SCRIPT" 2>&1 | while IFS= read -r line; do
+$CMD 2>&1 | while IFS= read -r line; do
     echo "$line" | tee -a "$LOG_FILE"
     
     # Check if time window has ended (check periodically, not on every line)
