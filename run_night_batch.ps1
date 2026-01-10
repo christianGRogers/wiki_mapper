@@ -36,21 +36,6 @@ function Log-Message {
     Add-Content -Path $LogFile -Value $logEntry
 }
 
-# Function to check if current time is within allowed window
-function Is-TimeAllowed {
-    $currentTime = Get-Date
-    $startTime = Get-Date -Hour 0 -Minute 30 -Second 0
-    $endTime = Get-Date -Hour 4 -Minute 30 -Second 0
-    
-    return ($currentTime -ge $startTime -and $currentTime -le $endTime)
-}
-
-# Check if we're in the allowed time window
-if (-not (Is-TimeAllowed)) {
-    Log-Message "Not in allowed time window (12:30 AM - 4:30 AM). Exiting."
-    exit 0
-}
-
 Log-Message "Starting WikiMapper batch run..."
 
 # Log multi-machine configuration if applicable
@@ -97,9 +82,9 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Run the main script with time limit
+# Run the main script
 Log-Message "Starting $PythonScript..."
-Log-Message "Will run until 4:30 AM..."
+Log-Message "Running continuously (24/7 mode)..."
 
 # Build command arguments for multi-machine mode if applicable
 $pythonArgs = @()
@@ -111,62 +96,14 @@ if ($MultiMachine) {
     Log-Message "Running command: python $PythonScript"
 }
 
-# Start the Python process as a job to capture output while monitoring
-$job = Start-Job -ScriptBlock {
-    param($scriptPath, $venvPath, $args)
-    
-    # Activate venv in job
-    & "$venvPath\Scripts\Activate.ps1"
-    
-    # Run Python and capture output
-    if ($args.Count -gt 0) {
-        & python $scriptPath $args 2>&1
-    } else {
-        & python $scriptPath 2>&1
-    }
-} -ArgumentList $PythonScript, $VenvDir, $pythonArgs
-
-Log-Message "Python process started with Job ID: $($job.Id)"
-
-# Monitor the job and display output in real-time
-while ($job.State -eq 'Running') {
-    # Check if time window has ended
-    if (-not (Is-TimeAllowed)) {
-        Log-Message "Time window ended (4:30 AM reached). Stopping process..."
-        Stop-Job -Job $job
-        Remove-Job -Job $job -Force
-        Log-Message "Process stopped successfully"
-        break
-    }
-    
-    # Get any new output from the job and display it
-    $output = Receive-Job -Job $job
-    if ($output) {
-        foreach ($line in $output) {
-            Write-Host $line
-            Add-Content -Path $LogFile -Value $line
-        }
-    }
-    
-    Start-Sleep -Seconds 1  # Check every second for output
+# Run the Python script directly and capture output
+if ($pythonArgs.Count -gt 0) {
+    & python $PythonScript $pythonArgs 2>&1 | Tee-Object -FilePath $LogFile -Append
+} else {
+    & python $PythonScript 2>&1 | Tee-Object -FilePath $LogFile -Append
 }
 
-# Get any remaining output
-$output = Receive-Job -Job $job
-if ($output) {
-    foreach ($line in $output) {
-        Write-Host $line
-        Add-Content -Path $LogFile -Value $line
-    }
-}
-
-# Get exit code
-$exitCode = 0
-if ($job.State -eq 'Failed') {
-    $exitCode = 1
-}
-
-Remove-Job -Job $job -Force
+$exitCode = $LASTEXITCODE
 
 Log-Message "Main script finished with exit code: $exitCode"
 
