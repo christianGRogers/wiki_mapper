@@ -5,7 +5,7 @@ My implementation of a Wikipedia mapping tool that creates a complete graph of W
 
 - **Single-machine mode**: Run on one machine to process all Wikipedia articles
 - **Multi-machine mode**: Distribute processing across multiple machines for faster completion
-- **Automatic time windowing**: Runs between 12:30 AM - 4:30 AM for off-peak processing
+- **Continuous operation**: Runs continuously (24/7) by default; you can schedule runs using system tools like cron or systemd if desired
 - **Resume capability**: Stop and restart anytime without losing progress
 - **Database merging**: Combine results from multiple machines into a single database
 
@@ -30,12 +30,15 @@ screen -r wiki_batch
 tail -f batch_run.log
 ```
 
-**Windows (PowerShell):**
-```powershell
-# Run directly
-.\run_night_batch.ps1
+**Windows:**
+```text
+Windows-specific PowerShell runner removed. To run on Windows, use WSL (recommended), a Linux VM, or run the Python scripts directly with Python. Example:
 
-# Or schedule with Task Scheduler for automated runs
+# In WSL or Linux environment
+./run_night_batch.sh --machine-id 0 --total-machines 3
+
+# Or run the Python script directly from any OS
+python main_multi_machine.py --machine-id 0 --total-machines 3
 ```
 
 ### Multi-Machine Mode
@@ -61,16 +64,9 @@ screen -S wiki_batch
 # Ctrl+A, D to detach
 ```
 
-**Windows (PowerShell):**
-```powershell
-# Machine 1
-.\run_night_batch.ps1 -MachineId 0 -TotalMachines 3
-
-# Machine 2
-.\run_night_batch.ps1 -MachineId 1 -TotalMachines 3
-
-# Machine 3
-.\run_night_batch.ps1 -MachineId 2 -TotalMachines 3
+**Windows:**
+```text
+Use WSL, a Linux VM, or run the Python script directly as shown above.
 ```
 
 ### Merging Results
@@ -92,8 +88,8 @@ python merge_databases.py wiki_mapping.db wiki_mapping_machine_0.db wiki_mapping
 - **`main.py`** - Original single-machine implementation
 - **`main_multi_machine.py`** - Multi-machine variant with hash-based partitioning
 - **`merge_databases.py`** - Database merger utility
-- **`run_night_batch.sh`** - Bash runner script (Linux/Mac) with time windowing
-- **`run_night_batch.ps1`** - PowerShell runner script (Windows) with time windowing
+- **`run_night_batch.sh`** - Bash runner script (Linux/Mac) — runs continuously by default
+- **`run_night_batch.ps1`** - (removed) PowerShell runner (Windows) — use the bash runner or Python scripts instead
 - **`MULTI_MACHINE_README.md`** - Detailed multi-machine documentation
 - **`RUNNER_USAGE.md`** - Complete runner script usage guide
 
@@ -168,17 +164,7 @@ Add to crontab (`crontab -e`):
 30 0 * * * cd /path/to/wiki_mapper && ./run_night_batch.sh --machine-id 0 --total-machines 3 >> cron.log 2>&1
 ```
 
-### Windows Task Scheduler
-
-Create a task that runs at 12:30 AM:
-
-**Single machine:**
-- Program: `powershell.exe`
-- Arguments: `-ExecutionPolicy Bypass -File "C:\path\to\wiki_mapper\run_night_batch.ps1"`
-
-**Multi-machine (Machine 0):**
-- Program: `powershell.exe`
-- Arguments: `-ExecutionPolicy Bypass -File "C:\path\to\wiki_mapper\run_night_batch.ps1" -MachineId 0 -TotalMachines 3`
+*(Windows Task Scheduler instructions removed — use WSL, cron, or systemd on Windows hosts.)*
 
 ## Performance Tips
 

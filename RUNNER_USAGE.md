@@ -4,9 +4,14 @@ The runner scripts have been updated to support both single-machine and multi-ma
 
 ## Single-Machine Mode (Original)
 
-### PowerShell (Windows)
-```powershell
-.\run_night_batch.ps1
+Note: The Windows PowerShell runner has been removed. To run on Windows, use WSL, a Linux VM, or run the Python scripts directly. Example:
+
+```bash
+# In WSL or Linux environment
+./run_night_batch.sh --machine-id 0 --total-machines 3
+
+# Or run the Python script directly from any OS
+python main_multi_machine.py --machine-id 0 --total-machines 3
 ```
 
 ### Bash (Linux/Mac)
@@ -16,22 +21,7 @@ The runner scripts have been updated to support both single-machine and multi-ma
 
 ## Multi-Machine Mode
 
-### PowerShell (Windows)
-
-**Machine 1:**
-```powershell
-.\run_night_batch.ps1 -MachineId 0 -TotalMachines 3
-```
-
-**Machine 2:**
-```powershell
-.\run_night_batch.ps1 -MachineId 1 -TotalMachines 3
-```
-
-**Machine 3:**
-```powershell
-.\run_night_batch.ps1 -MachineId 2 -TotalMachines 3
-```
+See the Bash examples above or run the Python script directly as shown earlier.
 
 ### Bash (Linux/Mac)
 
@@ -59,10 +49,8 @@ export TOTAL_MACHINES=3
 
 ## Features
 
-### Time Window
-Both scripts run only between **12:30 AM and 4:30 AM**:
-- **Bash**: Waits until 12:30 AM if started early
-- **PowerShell**: Exits if not in time window (schedule with Task Scheduler)
+### Continuous Run
+Scripts run continuously by default (24/7). If you want scheduled runs, use system tools like `cron` or systemd timers. The runner can also be run inside `screen`/`tmux`.
 
 ### Automatic Configuration
 When using multi-machine mode:
@@ -78,21 +66,7 @@ Both scripts automatically:
 
 ## Scheduling
 
-### Windows Task Scheduler (PowerShell)
-
-**For single machine:**
-```
-Program: powershell.exe
-Arguments: -ExecutionPolicy Bypass -File "C:\path\to\run_night_batch.ps1"
-Start time: 12:30 AM
-```
-
-**For multi-machine (Machine 0):**
-```
-Program: powershell.exe
-Arguments: -ExecutionPolicy Bypass -File "C:\path\to\run_night_batch.ps1" -MachineId 0 -TotalMachines 3
-Start time: 12:30 AM
-```
+*(Windows Task Scheduler instructions removed — use WSL, cron, or systemd on Windows hosts.)*
 
 ### Linux Cron (Bash)
 
@@ -133,13 +107,9 @@ screen -S wikimapper
 
 ## Stopping Gracefully
 
-Both scripts will automatically stop at **4:30 AM**.
+The runner will continue until the Python process exits (completion or error) or you stop it manually.
 
-To stop manually:
-- **PowerShell**: Press `Ctrl+C`
-- **Bash**: Press `Ctrl+C` or send SIGINT
-
-The scripts will gracefully stop the Python process and save current progress.
+To stop manually: press `Ctrl+C` in the running terminal (or send SIGINT). The Python process should exit gracefully and progress will be saved.
 
 ## Combining with Existing Database
 
@@ -157,8 +127,8 @@ If you already have a partially complete database from running the original `mai
 Make sure you provide both `--machine-id` and `--total-machines`.
 
 ### "Virtual environment creation failed"
-- **Windows**: Ensure Python is in PATH
-- **Linux**: Install `python3-venv` package
+- Ensure Python is in PATH and `python3 -m venv`/`python -m venv` is available
+- On Linux, install the `python3-venv` package if needed
 
 ### Process doesn't stop at 4:30 AM
 Check if the time zone is correct. The scripts use system local time.
